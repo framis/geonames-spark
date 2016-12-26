@@ -1,0 +1,7 @@
+target/
+download/
+spark-warehouse/
+metastore_db/
+project/project/
+project/target
+derby.log
