@@ -8,3 +8,11 @@ services:
       - "4040:4040"
     volumes:
       - .:/app
+  es:
+    image: elasticsearch:5
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      HOSTNAME: development
+    command: ["elasticsearch"]

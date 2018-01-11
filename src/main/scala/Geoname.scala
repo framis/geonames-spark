@@ -4,21 +4,30 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.types.{StructType, StructField, StringType, IntegerType, DateType, DoubleType, FloatType}
+import org.elasticsearch.spark.sql._
+import algolia.AlgoliaDsl._
+import algolia.AlgoliaClient
+import scala.concurrent.ExecutionContext.Implicits.global
 
-object SimpleApp {
+object Geoname {
   def main(args: Array[String]) {
+
     val conf = new SparkConf().setAppName("Geoname")
+    conf.set("spark.es.nodes", "es") // Docker node
+    conf.set("spark.es.nodes.wan.only", "true") // To use a remote ES cluster
+    conf.set("spark.es.index.auto.create", "true")
+
     val sc = new SparkContext(conf)
 
     val CITY_CODE = "P"
-    val GEONAME_PATH = "download/allCountries.txt"
+    val GEONAME_PATH = "download/FR.txt"
     val COUNTRY_PATH = "download/countryInfo.txt"
     val ADMIN_ONE_PATH = "download/admin1CodesASCII.txt"
     val ADMIN_TWO_PATH = "download/admin2Codes.txt"
     val POSTAL_CODE_PATH = "download/zip/allCountries.txt"
 
     val geonameSchema = StructType(Array(
-        StructField("geonameid", IntegerType, false),
+        StructField("externalid", IntegerType, false),
         StructField("name", StringType, false),
         StructField("asciiname", StringType, true),
         StructField("alternatenames", StringType, true),
@@ -80,6 +89,7 @@ object SimpleApp {
     val getAdminOneCode = udf( (country: String, adminOne: String) => { country + "." + adminOne } )
     val getAdminTwoCode = udf( (country: String, adminOne: String, adminTwo: String) => { country + "." + adminOne + "." + adminTwo } )
 
+
     val sqlContext = new SQLContext(sc)
     import sqlContext.implicits._
 
@@ -118,7 +128,7 @@ object SimpleApp {
         .option("delimiter", "\t")
         .schema(postalCodeSchema)
         .csv(POSTAL_CODE_PATH)
-        .dropDuplicates(Seq("name", "country", "admin1_code"))    
+        .dropDuplicates(Seq("name", "country", "admin1_code"))
 
     geonames.createOrReplaceTempView("geonames")
     countries.createOrReplaceTempView("countries")
@@ -127,13 +137,13 @@ object SimpleApp {
     postalCodes.createOrReplaceTempView("postalCodes")
 
     val cities = sqlContext.sql(
-          "SELECT g.geonameid, g.name, g.alternatenames, g.latitude, g.longitude, g.population, c.name as country_name, g.country as country_code, a1.name as admin1_name, g.admin1 as admin1_code, a2.name as admin2_name, p.postal_code " +
-          "FROM geonames g " + 
-          "LEFT OUTER JOIN countries c ON g.country = c.iso_alpha2 " + 
+          "SELECT g.externalid, g.name, g.alternatenames, g.latitude, g.longitude, g.population, c.name as country_name, g.country as country_code, a1.name as admin1_name, g.admin1 as admin1_code, a2.name as admin2_name, p.postal_code " +
+          "FROM geonames g " +
+          "LEFT OUTER JOIN countries c ON g.country = c.iso_alpha2 " +
           "LEFT OUTER JOIN adminOne a1 ON g.adminOneCode = a1.code " +
           "LEFT OUTER JOIN adminTwo a2 ON g.adminTwoCode = a2.code " +
           "LEFT OUTER JOIN postalCodes p ON g.name = p.name AND g.country = p.country AND g.admin1 = p.admin1_code")
-        .dropDuplicates(Seq("geonameid"))
+        .dropDuplicates(Seq("externalid"))
         .cache()
 
     cities.createOrReplaceTempView("cities")
@@ -142,7 +152,9 @@ object SimpleApp {
     val frenchCities = cities.filter($"country_code"==="FR").cache()
     assert(frenchCities.count() > 33000 && frenchCities.count() < 36000, "French cities count should be between 33000 and 36000")
 
-    sqlContext.sql("SELECT * FROM cities WHERE name='Paris'").show()
+    // INDEX TO ES
+
+    cities.saveToEs("cities/city",  Map("es.mapping.id" -> "externalid"))
 
     sc.stop()
   }

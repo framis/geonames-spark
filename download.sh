@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #DUMPS="allCountries.zip US.zip CN.zip TH.zip FR.zip admin1CodesASCII.txt admin2Codes.txt countryInfo.txt"
-DUMPS="ID.txt IN.zip IR.zip MX.zip NO.zip NO.zip RU.zip"
+DUMPS="FR.zip"
 POSTAL_CODES="allCountries.zip"
 FOLDER="`pwd`/download"
 
